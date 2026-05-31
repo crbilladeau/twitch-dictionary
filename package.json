@@ -1,0 +1,16 @@
+{
+  "name": "dictionary-api-chat",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dictionary.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "type": "module",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@streamerbot/client": "^1.12.2"
+  }
+}
