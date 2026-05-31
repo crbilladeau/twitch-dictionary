@@ -7,6 +7,11 @@ process.on('unhandledRejection', (reason) => {
   keepTerminalOpen();
 });
 
+process.on('uncaughtException', (error) => {
+  console.error('\n💥 UNHANDLED CRITICAL EXCEPTION:', error);
+  keepTerminalOpen();
+});
+
 function keepTerminalOpen() {
   const rl = readline.createInterface({
     input: process.stdin,
@@ -20,42 +25,84 @@ function keepTerminalOpen() {
 }
 
 async function main() {
-  const client = new StreamerbotClient({ immediate: false });
+  const client = new StreamerbotClient({
+    immediate: false,
+    autoReconnect: true,
+  });
 
-  client.on('Twitch.ChatMessage', async (data) => {
-    const message = data.data.message.message;
-    if (message.trim().toLowerCase().includes('!say')) {
-      const cleanWord = message.replace(/^!say\s*/i, '').trim();
-      if (!cleanWord) {
-        await client.doAction(
-          { name: 'Dictionary Definition' },
-          { dictDefinition: 'Ya gotta give me a word, dumbass.' },
-        );
-        return;
+  client.on('Twitch.ChatMessage', async ({ data }) => {
+    const role = data?.message?.role ?? 0;
+    const message = data?.message?.message || '';
+
+    if (!message || !message.trim().toLowerCase().startsWith('!say')) {
+      return;
+    }
+
+    // Only allow mods and broadcasters to use the !say command (role 3 = mod, 4 = streamer)
+    if (role !== 3 && role !== 4) {
+      console.error('Unauthorized user attempted !say command, skipping...');
+      await client.doAction(
+        { name: 'Dictionary Definition' },
+        { dictDefinition: 'Sorry, only mods can use this command.' },
+      );
+      return;
+    }
+
+    const cleanWord = message.replace(/^!say\s*/i, '').trim();
+    if (!cleanWord) {
+      await client.doAction(
+        { name: 'Dictionary Definition' },
+        { dictDefinition: 'Ya gotta give me a word, dumbass.' },
+      );
+      return;
+    }
+    try {
+      const entries = await getDefinition(cleanWord);
+      if (!entries.length) {
+        throw new Error('No definitions found');
       }
-      try {
-        const entries = await getDefinition(cleanWord);
-        const definitions = entries
-          .map((entry) => {
-            const { partOfSpeech, definition } = entry;
-            return `(${partOfSpeech}) - ${definition}`;
-          })
-          .join('\n');
 
-        if (!definitions.length) {
-          throw new Error('No definitions found');
+      const terminalLogString = entries
+        .map((entry) => `(${entry.partOfSpeech}) - ${entry.definition}`)
+        .join('\n');
+
+      console.log(
+        `Found requested definitions for ${cleanWord}:\n${terminalLogString}`,
+      );
+
+      // Send multiple smaller messages if response is greater than Twitch's limit (~500 characters, but we'll be safe)
+      const MAX_CHARS = 480;
+      let currentMessage = '';
+
+      for (const entry of entries) {
+        const textSegment = `(${entry.partOfSpeech}) - ${entry.definition} | `;
+
+        // If adding this entry pushes the current chunk over the limit, send it now
+        if ((currentMessage + textSegment).length > MAX_CHARS) {
+          await client.doAction(
+            { name: 'Dictionary Definition' },
+            { dictDefinition: currentMessage.trim().replace(/\|$/, '').trim() },
+          );
+          currentMessage = '';
+          await new Promise((resolve) => setTimeout(resolve, 500)); // Brief delay to prevent Twitch rate-limits
         }
-        await client.doAction(
-          { name: 'Dictionary Definition' },
-          { dictDefinition: definitions },
-        );
-      } catch (error) {
-        await client.doAction(
-          { name: 'Dictionary Definition' },
-          { dictDefinition: "Erm...sorry, we couldn't find that word." },
-        );
-        console.error(error);
+
+        currentMessage += textSegment;
       }
+
+      // Send any remaining text left over
+      if (currentMessage.trim().length > 0) {
+        await client.doAction(
+          { name: 'Dictionary Definition' },
+          { dictDefinition: currentMessage.trim().replace(/\|$/, '').trim() },
+        );
+      }
+    } catch (error) {
+      await client.doAction(
+        { name: 'Dictionary Definition' },
+        { dictDefinition: "Erm...sorry, we couldn't find that word." },
+      );
+      console.error(error);
     }
   });
 
@@ -70,7 +117,10 @@ async function main() {
       console.log(
         '⏳ Streamer.bot server is not ready yet. Retrying in 3 seconds...',
       );
-      await new Promise((resolve) => setTimeout(resolve, 3000)); // Wait 3 seconds before trying again
+      try {
+        await client.disconnect();
+      } catch (e) {}
+      await new Promise((resolve) => setTimeout(resolve, 3000));
     }
   }
 }
