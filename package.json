@@ -1,15 +1,23 @@
 {
   "name": "dictionary-api-chat",
   "version": "1.0.0",
-  "description": "",
+  "description": "A Twitch chat bot integration using Streamer.bot to fetch dictionary definitions.",
   "main": "dictionary.js",
+  "type": "module",
   "scripts": {
+    "start": "node dictionary.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "type": "module",
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "twitch",
+    "bot",
+    "dictionary",
+    "streamerbot",
+    "api"
+  ],
+  "author": "Charlie Billadeau charlie.billadeau@gmail.com (https://charliebilladeau.dev)",
+  "license": "UNLICENSED",
+  "private": true,
   "dependencies": {
     "@streamerbot/client": "^1.12.2"
   }
